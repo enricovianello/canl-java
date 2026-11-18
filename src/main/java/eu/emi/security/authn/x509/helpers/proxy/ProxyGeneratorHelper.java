@@ -20,6 +20,7 @@ import java.security.cert.CertificateParsingException;
 import java.security.cert.X509Certificate;
 import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 import javax.security.auth.x500.X500Principal;
 
@@ -27,6 +28,7 @@ import org.bouncycastle.asn1.ASN1InputStream;
 import org.bouncycastle.asn1.ASN1Object;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.DERPrintableString;
+import org.bouncycastle.asn1.pkcs.PKCSObjectIdentifiers;
 import org.bouncycastle.asn1.x500.AttributeTypeAndValue;
 import org.bouncycastle.asn1.x500.RDN;
 import org.bouncycastle.asn1.x500.X500Name;
@@ -35,6 +37,8 @@ import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.Extension;
 import org.bouncycastle.asn1.x509.KeyUsage;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
+import org.bouncycastle.operator.DefaultSignatureAlgorithmIdentifierFinder;
+import org.bouncycastle.operator.DefaultSignatureNameFinder;
 import org.bouncycastle.pkcs.PKCS10CertificationRequest;
 
 import eu.emi.security.authn.x509.helpers.CertificateHelpers;
@@ -322,6 +326,16 @@ public class ProxyGeneratorHelper
 					ext.isCritical(), ext.getValue());
 	}
 	
+	// Preserve SHA-384/SHA-512 for mixed chains; use SHA-256 as the default.
+	private static String mixedChainDigest(String parentSignature)
+	{
+		if (parentSignature.startsWith("SHA512WITH"))
+			return "SHA512";
+		if (parentSignature.startsWith("SHA384WITH"))
+			return "SHA384";
+		return "SHA256";
+	}
+
 	private void buildCertificate(X509Certificate issuingCert, PrivateKey privateKey) 
 			throws CertificateParsingException, InvalidKeyException, NoSuchProviderException, NoSuchAlgorithmException, SignatureException, IOException
 	{
@@ -336,6 +350,24 @@ public class ProxyGeneratorHelper
 					"public key contained in the issuer certificate", e);
 		}
 		String sigAlgName = issuingCert.getSigAlgName();
+		// The parent signed the issuing certificate. Its signature algorithm can
+		// belong to a different key family than the key signing this proxy.
+		String parentSignature = new DefaultSignatureNameFinder().getAlgorithmName(sigAlg)
+				.toUpperCase(Locale.ROOT);
+		String keyAlgorithm = privateKey.getAlgorithm();
+		String proxySignature = null;
+		if ("RSA".equalsIgnoreCase(keyAlgorithm) && parentSignature.endsWith("WITHECDSA"))
+			proxySignature = mixedChainDigest(parentSignature) + "withRSA";
+		else if (("EC".equalsIgnoreCase(keyAlgorithm) || "ECDSA".equalsIgnoreCase(keyAlgorithm))
+				&& (parentSignature.endsWith("WITHRSA")
+						|| PKCSObjectIdentifiers.id_RSASSA_PSS.equals(sigAlg.getAlgorithm())))
+			proxySignature = mixedChainDigest(parentSignature) + "withECDSA";
+
+		if (proxySignature != null)
+		{
+			sigAlgName = proxySignature;
+			sigAlg = new DefaultSignatureAlgorithmIdentifierFinder().find(proxySignature);
+		}
 		proxy = certBuilder.build(privateKey, 
 				sigAlg, 
 				sigAlgName, 
