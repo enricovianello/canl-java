@@ -21,6 +21,7 @@
 		<docman.enabled />
 		<doc.template>default-asc</doc.template>
 		<excludedJunitGroups>eu.emi.security.authn.x509.RiskyIntegrationTests</excludedJunitGroups>
+                <bc.version>1.87</bc.version>
 	</properties>
 
 
@@ -100,12 +101,12 @@
 		<dependency>
 			<groupId>org.bouncycastle</groupId>
 			<artifactId>bcpkix-jdk18on</artifactId>
-			<version>1.84</version>
+			<version>${bc.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.bouncycastle</groupId>
 			<artifactId>bcprov-jdk18on</artifactId>
-			<version>1.84</version>
+			<version>${bc.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>commons-io</groupId>
